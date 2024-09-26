@@ -165,7 +165,7 @@ async Task<List<Schedule>> Shedule(string url)
         {
             var dates = table.SelectSingleNode(".//td");
             var times = table.SelectNodes(".//td");
-            var HtmlLessons = table.SelectNodes(".//tr");
+            var HtmlLessons = table.SelectNodes(".//td");
 
             List<string> hours = new List<string>();
             List<string> Lessons = new List<string>();
@@ -190,7 +190,7 @@ async Task<List<Schedule>> Shedule(string url)
                 }
             }
 
-            //Получаем отдельный массив именно времени
+            //Получаем отдельный массив именно времени Complete
             for (int i = 0; i < times.Count; i++)
             {
                 if (times[i].OuterHtml.Contains("rowspan"))
@@ -200,98 +200,23 @@ async Task<List<Schedule>> Shedule(string url)
             }
             schedule.Time = hours.ToArray();
 
-            HtmlLessons.Remove(schedule.Time.Where(x => HtmlLessons.Any(y => y.OuterHtml.Contains(x))));
-            //HtmlLessons.RemoveAll(y => schedule.Time.Any(x => y.OuterHtml.Contains(x)));
+            // Проверяем, содержит ли текущий элемент HtmlLessons хотя бы одно время из schedule.Time Complete
+            for (int i = 0; i < HtmlLessons.Count; i++)
+            {
+                foreach (var time in schedule.Time)
+                {
+                    if (HtmlLessons[i].OuterHtml.Contains(time))
+                    {
+                        HtmlLessons.Remove(HtmlLessons[i]);
+                    }
+                }
+            }
 
-            //for (int i = 0; i < HtmlLessons.Count; i++)
-            //{
-            //    if(schedule.Time.Where(x => HtmlLessons.Any(y => y.OuterHtml.Contains(x))))
-            //    {
-
-            //    }
-            //    //if (HtmlLessons[i].OuterHtml.Contains(schedule.Time))
-            //    //{
-
-            //    //}
-            //    Console.WriteLine(HtmlLessons[i].InnerHtml);
-            //}
-            Console.WriteLine("|||||||||||||||||||||||||||||||");
-            //for (int i = 0; i < hours.Count; i++)
-            //{
-            //    if (hours[i].Contains("rowspan"))
-            //    {
-            //        Console.WriteLine(hours[i]);
-            //    }
-            //}
-
-
-
-
-            ////если в записях times попадается <span> (в нём записаны предметы) - удаляем
-            //for (int i = 0; i < times.Count; i++)
-            //{
-            //    if (times[i].OuterHtml.Contains("<span>"))
-            //    {
-            //        times.Remove(times[i]);
-            //    }
-            //}
-
-            //times.Remove(dates);
-            //lessons.Remove(dates);
-            //lessons.Remove(times);
-
-            //for (int i = 0; i < lessons.Count; i++)
-            //{
-            //        if (lessons[i].InnerHtml.Contains(times[i].InnerHtml))
-            //        {
-            //            lessons.Remove(lessons[i]);
-            //        }
-
-            //}
-            Console.WriteLine("zxc 1");
-
-            //foreach ( var lesson in lessons )
-            //{
-            //    Console.WriteLine(lesson.InnerText);
-            //}    
-            ////Если день недели попадается в times и lessons - удалить дни недели
-            //for (int i = 0; i < times.Count; i++)
-            //{
-            //    if (dates.InnerHtml.Contains(times[i].OuterHtml))
-            //    {
-            //        times.Remove(times[i]);
-            //        lessons.Remove(lessons[i]);
-            //    }
-            //}
-
-            schedule.Time = times.Select(x => x.InnerHtml).ToArray();
-
-            //for (int i = 0; i < times.Count; i++)
-            //{
-            //    Console.WriteLine(times[i].OuterHtml);
-            //}
-
-            //for (int i = 0; i < lessons.Count; i++)
-            //{
-            //    Console.WriteLine(lessons[i].OuterHtml);
-            //}
-
-            //если в записях пар попадается время пар - удаяем
-            //for (int i = 0; i < lessons.Count; i++)
-            //{
-            //    if (lessons[i].InnerHtml.Contains(times[i].InnerHtml))
-            //    {
-            //        lessons.Remove(lessons[i]);
-            //    }
-            //}
-
-            //if (!dates.InnerText.Contains("Занятий нет"))
-            //{
-            //    schedules.Add(new Schedule { Day = dates.InnerHtml.Trim(), 
-            //    Time = times.Select(x => x.InnerHtml).ToArray(),
-            //    LessonName = lessons.Select(x => x.InnerHtml).ToArray()
-            //    });
-            //}
+            foreach (var lesson in HtmlLessons)
+            {
+                Console.WriteLine(lesson.OuterHtml);
+                Console.WriteLine("\n");
+            }
         }
     }
     return schedules;
