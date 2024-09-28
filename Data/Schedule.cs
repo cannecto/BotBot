@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace BotBot.Data
 {
-    class Schedule
+    public class Schedule
     {
         public string Day {  get; set; }
         public string[] Time { get; set; }

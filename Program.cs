@@ -11,6 +11,7 @@ using Telegram.Bot.Extensions;
 using System.Xml;
 using HtmlAgilityPack;
 using System.Linq;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 string token = "7190154174:AAHWCx_6w4VNdE_5sp0p3KYE4qVPwJ4sR-A";
 var bot = new TelegramBotClient(token);
@@ -88,23 +89,17 @@ bot.OnUpdate += async (update) =>
                 Console.WriteLine(update.CallbackQuery.Message.Chat.FirstName + " || Узнаёт расписание");
                 var Tables = await Shedule("https://api.vgltu.ru/s/schedule?date_start=2024-09-24&group_name=ИЛ2-241-ОБ");
                 string output="";
-                var query = Tables.SelectMany(table =>
-                table.Time.Select((time, index) => new { Time = time, Lesson = table.LessonName[index] }))
-                .Select(timeAndLesson => new
+                
+                for (int i=0;i<6;i++)
                 {
-                    time = timeAndLesson.Time,
-                    lesson = timeAndLesson.Lesson
-                });
-
-                foreach (var Table in Tables)
-                {
-                    
-                    //output += "День: " + Table.Day + "\n" + "Время:\n" + string.Join("\n",Table.Time.Select(x=>x.Trim())) + "\n" + string.Join("\n", Table.LessonName.Select(x =>x)) + "\n";
+                    output += Tables[i].Day + "\n";
+                    for (int j = 0; j < Tables[i].Time.Length; j++)
+                    {
+                        output += "🕓" + Tables[i].Time[j] + "\n";
+                        output +=Tables[i].LessonName[j] + "\n";
+                    }
                 }
-                output = Regex.Replace(output, "<.*?>", "");
-                //output = Regex.Replace(output, @"\\s", " ");
-                output = Regex.Replace(output, "(\\s|\\t)+", " ");
-                //Console.WriteLine(output);
+                output = Regex.Replace(output, "<.*?>", string.Empty);
                 await bot.SendTextMessageAsync(chatId, output, replyMarkup: markup);
                 break;
         }
@@ -159,7 +154,7 @@ async Task<List<Schedule>> Shedule(string url)
         htmlDoc.LoadHtml(_shedule);
         var tableNodes = htmlDoc.DocumentNode.SelectNodes("//table");
 
-        Schedule schedule = new Schedule();
+        
 
         foreach (var table in tableNodes)
         {
@@ -169,8 +164,9 @@ async Task<List<Schedule>> Shedule(string url)
 
             List<string> hours = new List<string>();
             List<string> Lessons = new List<string>();
+            Schedule schedule = new Schedule();
 
-            schedule.Day = dates.InnerHtml; //dates.GetAttributeValue("rowspan",string.Empty);
+            schedule.Day = dates.InnerHtml.Trim();
 
             //Исключаем день из массива уроков Complete
             for (int i = 0; i < HtmlLessons.Count; i++)
@@ -200,6 +196,7 @@ async Task<List<Schedule>> Shedule(string url)
             }
             schedule.Time = hours.ToArray();
 
+
             // Проверяем, содержит ли текущий элемент HtmlLessons хотя бы одно время из schedule.Time Complete
             for (int i = 0; i < HtmlLessons.Count; i++)
             {
@@ -207,16 +204,36 @@ async Task<List<Schedule>> Shedule(string url)
                 {
                     if (HtmlLessons[i].OuterHtml.Contains(time))
                     {
+                        if (HtmlLessons[i].GetAttributeValue("rowspan", string.Empty) == "2")
+                        {
+                            string subgroups = "📚" + HtmlLessons[i + 1].InnerHtml + "\n" + "📚" + HtmlLessons[i + 2].InnerHtml;
+                            Lessons.Add(subgroups);
+                        }
+                        else
+                        {
+                            Lessons.Add("📚" + HtmlLessons[i+1].InnerHtml);
+                        }
                         HtmlLessons.Remove(HtmlLessons[i]);
                     }
                 }
             }
 
-            foreach (var lesson in HtmlLessons)
+            List<string> normal = new List<string>();
+            for (int i = 0; i < Lessons.Count; i++)
             {
-                Console.WriteLine(lesson.OuterHtml);
-                Console.WriteLine("\n");
+                normal = Lessons[i].Split("<span>").ToList();
+                Lessons[i] = string.Empty;
+                for (int j = 0; j < normal.Count; j++)
+                {
+                    normal[j] = normal[j].Trim();
+                    Lessons[i] += normal[j] + "\n";
+                }
             }
+
+            schedule.Day = "                                  " + "📅" + schedule.Day;
+            schedule.LessonName = Lessons.ToArray();
+            
+            schedules.Add(schedule);
         }
     }
     return schedules;
