@@ -41,6 +41,8 @@ bot.OnMessage += async (message, type) =>
     //текст сообщения пользователя
     var messageText = message.Text;
 
+    Console.WriteLine(message.Chat.Username);
+
     switch (messageText)
     {
         case "/start":
@@ -230,7 +232,7 @@ async Task<List<Schedule>> Shedule(string url)
                 }
             }
 
-            schedule.Day = "                                  " + "📅" + schedule.Day;
+            schedule.Day = "                                " + "📅" + schedule.Day;
             schedule.LessonName = Lessons.ToArray();
             
             schedules.Add(schedule);
