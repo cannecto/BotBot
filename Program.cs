@@ -12,6 +12,8 @@ using System.Xml;
 using HtmlAgilityPack;
 using System.Linq;
 using static System.Runtime.InteropServices.JavaScript.JSType;
+using Telegram.Bot.Types;
+using Microsoft.EntityFrameworkCore;
 
 string token = "7190154174:AAHWCx_6w4VNdE_5sp0p3KYE4qVPwJ4sR-A";
 var bot = new TelegramBotClient(token);
@@ -21,17 +23,19 @@ await bot.DropPendingUpdatesAsync();
 //добавляем клавиатуру
 var keyboard = new ReplyKeyboardMarkup();
 //добавляем кнопку в 1 строку
+keyboard.AddButtons(new KeyboardButton("/start"));
 keyboard.AddNewRow(); //вторая строка
-                      //добавляем кнопку во вторую строку
-keyboard.AddButtons(new KeyboardButton("Крикнуть гойда"));
+keyboard.AddButtons(new KeyboardButton("Донат по хохлам"), new KeyboardButton("Узнать расписание"));
+keyboard.AddNewRow();
+keyboard.AddButtons(new KeyboardButton("Изменить группу"));
 
 //Другая логика отправки
 var markup = new InlineKeyboardMarkup(
      new List<InlineKeyboardButton>()
      {
                      new InlineKeyboardButton("Донат по хохлам") {CallbackData = "1"},
-                     new InlineKeyboardButton("Погода") {CallbackData = "2"},
-                     new InlineKeyboardButton("Расписание на сегодня") {CallbackData = "3"}
+                     new InlineKeyboardButton("Расписание на сегодня") {CallbackData = "2"},
+                     new InlineKeyboardButton("Изменить группу") {CallbackData = "3"}
      });
 
 bot.OnMessage += async (message, type) =>
@@ -41,19 +45,50 @@ bot.OnMessage += async (message, type) =>
     //текст сообщения пользователя
     var messageText = message.Text;
 
-    Console.WriteLine(message.Chat.Username);
+    using DataContext dataContext = new DataContext();
+    var user = dataContext.Users.FirstOrDefault(i => i.Id == message.Chat.Id);
+    if (user !=null && user.WaitToChangeGroup)
+    {
+        user.GroupName = message.Text;
+        await bot.SendTextMessageAsync(chatId, "Вы успешно сменили название группы!", replyMarkup: markup);
+    }
 
     switch (messageText)
     {
         case "/start":
-            
-            await bot.SendTextMessageAsync(chatId, "Привет",replyMarkup: markup);
+            ChekingDatabase(message);
+            var messageId = message.MessageId;
+            await bot.SendTextMessageAsync(chatId, "Привет",replyMarkup: keyboard);
+            await bot.DeleteMessageAsync(chatId, messageId+1);
+            await bot.SendTextMessageAsync(chatId, "Текущий список команд:", replyMarkup: markup);
             Console.WriteLine(message.Chat.FirstName + " || Включил бота");
             break;
         case "Донат по хохлам":
             await bot.SendTextMessageAsync(chatId,"Стреляем по хохлам");
-            Console.WriteLine(message.Chat.FirstName +" || ");
+            Console.WriteLine(message.Chat.FirstName +" || Стреляет по хохлам");
             SendDron(chatId);
+            break;
+        case "Узнать расписание":
+            Console.WriteLine(message.Chat.FirstName + " || Узнаёт рассписание");
+            var Tables = await Shedule("https://api.vgltu.ru/s/schedule?date_start=2024-09-24&group_name=ИЛ2-241-ОБ");
+            string output = "";
+
+            for (int i = 0; i < 6; i++)
+            {
+                output += Tables[i].Day + "\n";
+                for (int j = 0; j < Tables[i].Time.Length; j++)
+                {
+                    output += "🕓" + Tables[i].Time[j] + "\n";
+                    output += Tables[i].LessonName[j] + "\n";
+                }
+            }
+            output = Regex.Replace(output, "<.*?>", string.Empty);
+            await bot.SendTextMessageAsync(chatId, output, replyMarkup: markup);
+            break;
+        case "Изменить группу":
+                var userChange = dataContext.Users.FirstOrDefault(i => i.Id == message.Chat.Id);
+                await bot.SendTextMessageAsync(chatId, "Вы хотите сменить группу\nВаша текущая группа: " + userChange.GroupName + "\nВведите точное название новой группы:");
+                userChange.WaitToChangeGroup = true;
             break;
         default:
             await bot.SendTextMessageAsync(chatId,"Команды нафиг", replyMarkup:markup);
@@ -81,13 +116,8 @@ bot.OnUpdate += async (update) =>
                 await bot.SendTextMessageAsync(chatId, "Стреляем по хохлам");
                 Console.WriteLine(update.CallbackQuery.Message.Chat.FirstName + " || Донатит по хохлам");
                 SendDron(chatId);
-                break;
+            break;
             case "2":
-                Console.WriteLine(update.CallbackQuery.Message.Chat.FirstName + " || Узнаёт погоду");
-                var end = await ServerRequest();
-                await bot.SendTextMessageAsync(chatId, end, replyMarkup: markup);
-                break;
-            case "3":
                 Console.WriteLine(update.CallbackQuery.Message.Chat.FirstName + " || Узнаёт расписание");
                 var Tables = await Shedule("https://api.vgltu.ru/s/schedule?date_start=2024-09-24&group_name=ИЛ2-241-ОБ");
                 string output="";
@@ -103,7 +133,7 @@ bot.OnUpdate += async (update) =>
                 }
                 output = Regex.Replace(output, "<.*?>", string.Empty);
                 await bot.SendTextMessageAsync(chatId, output, replyMarkup: markup);
-                break;
+            break;
         }
     }
 };
@@ -114,34 +144,6 @@ async void SendDron(long IdOfChat)
     FileStream fileStream = System.IO.File.OpenRead("B:\\VS\\работы\\BotBot\\Data\\Dron.mp4");
     await bot.SendVideoAsync(IdOfChat, fileStream);
 };
-
-//создаём запрос на сервер
-
-async Task <string> ServerRequest()
-{
-    WebRequest webRequest = WebRequest.Create("https://api.openweathermap.org/data/2.5/weather?lat=51.66&lon=39.20&appid=b8d7338c7ff1412cb65b6a0751b250dd");
-    webRequest.Method = "POST";
-    webRequest.ContentType = "application/x-www-urlencoded";
-
-    WebResponse response = await webRequest.GetResponseAsync();
-
-    string Data;
-
-    using (Stream s = response.GetResponseStream())
-    {
-        using (StreamReader sr = new StreamReader(s))
-        {
-            Data = await sr.ReadToEndAsync();
-        }
-    };
-    response.Close();
-
-    Root weather = JsonConvert.DeserializeObject<Root>(Data);
-    Console.WriteLine(string.Join("\n", weather.weather.Select(x => x.description)));
-    string _end = $"Ваш город = {weather.name}, Температура = { weather.main.temp - 273}";
-    Console.WriteLine(_end);
-    return _end;
-}
 
 async Task<List<Schedule>> Shedule(string url)
 {
@@ -240,4 +242,32 @@ async Task<List<Schedule>> Shedule(string url)
     }
     return schedules;
 }
+
+
+//Проверка, есть ли текущий пользователь в базе данных
+async Task ChekingDatabase(Telegram.Bot.Types.Message message)
+{
+    using DataContext dataContext = new DataContext();
+    var user = await dataContext.Users.FirstOrDefaultAsync(i => i.Id == message.Chat.Id);
+    if (user == null)
+    {
+        BotBot.Data.User User = new BotBot.Data.User()
+        {
+            Id = message.Chat.Id,
+            UserName = message.Chat.Username
+        };
+        try
+        {
+            await dataContext.Users.AddAsync(User);
+            await dataContext.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex);
+        }
+        
+        Console.WriteLine(message.Chat.Username + " || Был добавлен в базу данных");
+    }
+}
+
 Console.ReadKey();
