@@ -14,6 +14,7 @@ using System.Linq;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 using Telegram.Bot.Types;
 using Microsoft.EntityFrameworkCore;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 
 string token = "7190154174:AAHWCx_6w4VNdE_5sp0p3KYE4qVPwJ4sR-A";
 var bot = new TelegramBotClient(token);
@@ -30,13 +31,19 @@ keyboard.AddNewRow();
 keyboard.AddButtons(new KeyboardButton("Изменить группу"));
 
 //Другая логика отправки
-var markup = new InlineKeyboardMarkup(
-     new List<InlineKeyboardButton>()
-     {
-                     new InlineKeyboardButton("Донат по хохлам") {CallbackData = "1"},
-                     new InlineKeyboardButton("Расписание на сегодня") {CallbackData = "2"},
-                     new InlineKeyboardButton("Изменить группу") {CallbackData = "3"}
-     });
+var markup = new InlineKeyboardMarkup(new List<List<InlineKeyboardButton>>
+{
+    new List<InlineKeyboardButton>
+    {
+        new InlineKeyboardButton("Донат по хохлам") {CallbackData = "1"},
+        new InlineKeyboardButton("Расписание на сегодня") {CallbackData = "2"},
+    },
+    new List<InlineKeyboardButton>
+    {
+        new InlineKeyboardButton("Изменить группу") {CallbackData = "3"}
+    }
+});
+
 
 bot.OnMessage += async (message, type) =>
 {
@@ -46,11 +53,13 @@ bot.OnMessage += async (message, type) =>
     var messageText = message.Text;
 
     using DataContext dataContext = new DataContext();
-    var user = dataContext.Users.FirstOrDefault(i => i.Id == message.Chat.Id);
+    var user = await dataContext.Users.FirstOrDefaultAsync(i => i.Id == message.Chat.Id);
     if (user !=null && user.WaitToChangeGroup)
     {
         user.GroupName = message.Text;
-        await bot.SendTextMessageAsync(chatId, "Вы успешно сменили название группы!", replyMarkup: markup);
+        user.WaitToChangeGroup = false;
+        await dataContext.SaveChangesAsync();
+        await bot.SendTextMessageAsync(chatId, "Вы успешно сменили название группы!");
     }
 
     switch (messageText)
@@ -59,7 +68,6 @@ bot.OnMessage += async (message, type) =>
             ChekingDatabase(message);
             var messageId = message.MessageId;
             await bot.SendTextMessageAsync(chatId, "Привет",replyMarkup: keyboard);
-            await bot.DeleteMessageAsync(chatId, messageId+1);
             await bot.SendTextMessageAsync(chatId, "Текущий список команд:", replyMarkup: markup);
             Console.WriteLine(message.Chat.FirstName + " || Включил бота");
             break;
@@ -86,9 +94,12 @@ bot.OnMessage += async (message, type) =>
             await bot.SendTextMessageAsync(chatId, output, replyMarkup: markup);
             break;
         case "Изменить группу":
+                Console.WriteLine(message.Chat.Username + " || Хочет изменить группу");
                 var userChange = dataContext.Users.FirstOrDefault(i => i.Id == message.Chat.Id);
                 await bot.SendTextMessageAsync(chatId, "Вы хотите сменить группу\nВаша текущая группа: " + userChange.GroupName + "\nВведите точное название новой группы:");
                 userChange.WaitToChangeGroup = true;
+                await dataContext.SaveChangesAsync();
+                
             break;
         default:
             await bot.SendTextMessageAsync(chatId,"Команды нафиг", replyMarkup:markup);
@@ -100,7 +111,7 @@ bot.OnMessage += async (message, type) =>
 
 //обработка данных, не отправленных в сообщениях
 bot.OnUpdate += async (update) =>
-{
+{   
     //проверка что тип поступивших данных - запрос обратного вызова
     if (update.Type == UpdateType.CallbackQuery)
     {
@@ -108,6 +119,9 @@ bot.OnUpdate += async (update) =>
         var chatId = update.CallbackQuery.Message.Chat.Id;
         //считываем полученный запрос
         var callbackData = update.CallbackQuery.Data;
+
+        using DataContext dataContext = new DataContext();
+        var user = dataContext.Users.FirstOrDefault(i => i.Id == chatId);
 
         //проверяем значение запроса
         switch (callbackData)
@@ -117,23 +131,36 @@ bot.OnUpdate += async (update) =>
                 Console.WriteLine(update.CallbackQuery.Message.Chat.FirstName + " || Донатит по хохлам");
                 SendDron(chatId);
             break;
+
             case "2":
                 Console.WriteLine(update.CallbackQuery.Message.Chat.FirstName + " || Узнаёт расписание");
-                var Tables = await Shedule("https://api.vgltu.ru/s/schedule?date_start=2024-09-24&group_name=ИЛ2-241-ОБ");
+                var Tables = await Shedule(user.GroupName);
                 string output="";
                 
                 for (int i=0;i<6;i++)
                 {
+                    if (Tables[i].Day.Contains("Занятий нет"))
+                    {
+                        break;
+                    }
                     output += Tables[i].Day + "\n";
                     for (int j = 0; j < Tables[i].Time.Length; j++)
                     {
                         output += "🕓" + Tables[i].Time[j] + "\n";
-                        output +=Tables[i].LessonName[j] + "\n";
+                        output += Tables[i].LessonName[j] + "\n";
                     }
                 }
                 output = Regex.Replace(output, "<.*?>", string.Empty);
                 await bot.SendTextMessageAsync(chatId, output, replyMarkup: markup);
             break;
+
+            case "3":
+                Console.WriteLine(update.CallbackQuery.Message.Chat.Username + " || Хочет изменить группу");
+                var userChange = dataContext.Users.FirstOrDefault(i => i.Id == chatId);
+                await bot.SendTextMessageAsync(chatId, "Вы хотите сменить группу\nВаша текущая группа: " + userChange.GroupName + "\nВведите точное название новой группы:");
+                userChange.WaitToChangeGroup = true;
+                await dataContext.SaveChangesAsync();
+                break;
         }
     }
 };
@@ -145,9 +172,12 @@ async void SendDron(long IdOfChat)
     await bot.SendVideoAsync(IdOfChat, fileStream);
 };
 
-async Task<List<Schedule>> Shedule(string url)
+async Task<List<Schedule>> Shedule(string groupname)
 {
+    DateTime today = DateTime.Today;
     string _shedule = "";
+    string date = today.Year+"-"+today.Month+"-"+today.Day;
+    string url = $"https://api.vgltu.ru/s/schedule?date_start={date}&group_name={groupname}";
     List<Schedule> schedules = new List<Schedule>();
 
     using (WebClient webClient = new WebClient())
